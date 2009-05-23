@@ -1,3 +1,5 @@
+{{{
+
 Organise your photos.
 
 NAME
@@ -26,3 +28,5 @@ Options:
   -d DEPTH, --depth=DEPTH
                         unlimited [default: 0]
   -g LOG, --log=LOG     log all actions [default: stdio]
+
+}}}
