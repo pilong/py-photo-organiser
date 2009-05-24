@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-#Meitham 16 May 2009
-"""Organise your photos.
+#Meitham 24 May 2009
+__doc__ = """Organise your photos.
 
 NAME
     photo-organiser - sorting photo files according to their picture take date
@@ -22,12 +22,15 @@ Options:
   -v, --verbose         make lots of noise [default]
   -q, --quiet           unless errors don't output anything
   -r, --recursive       operate recursively [default]
-  -s, --symlink         recurse into symbolic linked directories
+  -s, --symlink         follow symbolic linked directories
   -m, --move            delete original file from SOURCE
-  -i, --ignore          ignore photos with no EXIF info
   -d DEPTH, --depth=DEPTH
                         unlimited [default: 0]
-  -g LOG, --log=LOG     log all actions [default: stdio]
+  -g LOG, --log=LOG     log all actions [default: sys.stderr]
+  -i, --ignore          ignore photos with missing EXIF header [default]
+  -p NOEXIFPATH, --process-no-exif=NOEXIFPATH
+                        copy/moves images with no EXIF data to [default:
+                        undated]
 """
 from optparse import OptionParser
 from datetime import datetime
@@ -39,6 +42,40 @@ import string
 import hashlib
 import logging, logging.handlers
 
+__version__ = "0.1"
+def getOptions():
+    ''' creates the options and return a parser object
+    '''
+    parser = OptionParser(usage="%prog [options] src dest", version="%prog 0.1")
+    parser.add_option("-v", "--verbose",
+                      action="store_true", dest="verbose", 
+                      default=True,
+                      help="make lots of noise [default]")
+    parser.add_option("-q", "--quiet",
+                      action="store_false", dest="verbose",
+                      help="unless errors don't output anything")
+    parser.add_option("-r", "--recursive",
+                      action="store_true", dest="recursive",
+                      help="operate recursively [default]")
+    parser.add_option("-s", "--symlink",
+                      action="store_true", dest="symlink",
+                      help="follow symbolic linked directories")
+    parser.add_option("-m", "--move",
+                      action="store_true", dest="move",
+                      help="delete original file from SOURCE, by default it makes a copy of the file")
+    parser.add_option("-d", "--depth",
+                      default="0", dest="depth",
+                      help="unlimited [default: %default]")
+    parser.add_option("-g", "--log",
+                      default="sys.stderr", dest="log",
+                      help="log all actions [default: %default]")
+    parser.add_option("-i", "--ignore",
+                      action="store_true", dest="ignore", default=True,
+                      help="ignore photos with missing EXIF header [default]")
+    parser.add_option("-p", "--process-no-exif",
+                      default="undated", dest="noExifPath",
+                      help="copy/moves images with no EXIF data to [default: %default]")
+    return parser
 
 def getImageDateTime(filepath):
     ''' returns a tuple of YYYY/MM/DD and HH-MM for picture taken date time respectively
@@ -138,39 +175,6 @@ def clone(src, dst, copy=1):
     else:
         shutil.move(src, dst)
 
-def getOptions():
-    ''' creates the options and return a parser object
-    '''
-    parser = OptionParser(usage="%prog [options] src dest", version="%prog 1.0")
-    parser.add_option("-v", "--verbose",
-                      action="store_true", dest="verbose", 
-                      default=True,
-                      help="make lots of noise [default]")
-    parser.add_option("-q", "--quiet",
-                      action="store_false", dest="verbose",
-                      help="unless errors don't output anything")
-    parser.add_option("-r", "--recursive",
-                      action="store_true", dest="recursive",
-                      help="operate recursively [default]")
-    parser.add_option("-s", "--symlink",
-                      action="store_true", dest="symlink",
-                      help="follow symbolic linked directories")
-    parser.add_option("-m", "--move",
-                      action="store_true", dest="move",
-                      help="delete original file from SOURCE")
-    parser.add_option("-d", "--depth",
-                      default="0", dest="depth",
-                      help="unlimited [default: %default]")
-    parser.add_option("-g", "--log",
-                      default="sys.stderr", dest="log",
-                      help="log all actions [default: %default]")
-    parser.add_option("-i", "--ignore",
-                      action="store_true", dest="ignore", default=True,
-                      help="ignore photos with missing EXIF header [default]")
-    parser.add_option("-p", "--process-no-exif",
-                      default="undated", dest="noExifPath",
-                      help="copy/moves images with no EXIF data to [default: %default]")
-    return parser
     
 if __name__=='__main__':
     ''' main
