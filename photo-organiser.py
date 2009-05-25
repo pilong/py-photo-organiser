@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#Meitham 24 May 2009
+#Meitham 25 May 2009
 __doc__ = """Organise your photos.
 
 NAME
@@ -42,7 +42,9 @@ import string
 import hashlib
 import logging, logging.handlers
 
-__version__ = "0.1"
+__version__ = "0.100"
+class ImageDate:
+    pass
 def getOptions():
     ''' creates the options and return a parser object
     '''
@@ -78,25 +80,28 @@ def getOptions():
     return parser
 
 def getImageDateTime(filepath):
-    ''' returns a tuple of YYYY/MM/DD and HH-MM for picture taken date time respectively
+    ''' returns the datetime of the image or None
     '''
     try:
         im = Image.open(filepath)
         if hasattr(im, '_getexif'):
             exifdata = im._getexif()
-            if type(exifdata) == type(None):
-                return None, None, None, None
             logging.debug("type of object is %s" %type(exifdata))
+            if type(exifdata) == type(None):
+                return None
             ctime = exifdata[0x9003]
-            image_dt_tm = datetime.strptime(ctime, '%Y:%m:%d %H:%M:%S')
-            _, ext = os.path.splitext(filepath)
-            return image_dt_tm.year, image_dt_tm.month, image_dt_tm.day, \
-                datetime.strftime(image_dt_tm, '%H-%M-%S')+ext
+            try:
+                image_dt_tm = datetime.strptime(ctime, '%Y:%m:%d %H:%M:%S')
+            except ValueError, e:
+                logging.debug(e)
+                image_dt_tm = None
+            return image_dt_tm
         else:
-            return None, None, None, None
+            logging.debug("%s has no datetime attribute" %filepath)
+            return None
     except Exception, e:
-        print e
-        return None, None, None, None
+        logging.debug(e)
+        return None
     
 def treewalk(top, followlinks=False, depth=0):
     ''' generator similar to os.walk(), but with limited subdirectory depth
@@ -153,12 +158,13 @@ def getNewFileName(filepath):
             continue
         else:
             return newname
-def clone(src, dst, copy=1):
+
+def copyOrMove(src, dst, copy=1):
     ''' copy or move file
     '''
     if os.path.exists(dst):
         # check for duplication
-        if isExact(src, dts):
+        if isExact(src, dst):
             # files are exact
             logger.info("%s and %s are exact duplicate" %(src, dst))
         else:
@@ -175,6 +181,13 @@ def clone(src, dst, copy=1):
     else:
         shutil.move(src, dst)
 
+def renameImage(filepath, imageDateTime):
+    ''' returns the new name of an image according to its date, also return the full path
+    '''
+    _, ext = os.path.splitext(filepath) # keep the extension
+    newFileName = datetime.strftime(imageDateTime, '%H-%M-%S')+ext
+    newFileName = os.path.join(filepath, imageDateTime.year, imageDateTime.month, imageDateTime.day, newFileName)
+    return newFileName
     
 if __name__=='__main__':
     ''' main
@@ -215,19 +228,19 @@ if __name__=='__main__':
         fullfilepath = os.path.join(dirpath, filename)
         if isPhoto(fullfilepath):
             logger.debug("processing %s" %fullfilepath)
-            pYear, pMonth, pDay, pTime = getImageDateTime(fullfilepath)
-            if pYear is None:
+            imageDateTime = getImageDateTime(fullfilepath)
+            if imageDateTime is None:
                 logger.warning("%s photo has no known date" %fullfilepath)
                 # what to do with photos with missing exif
                 if options.ignore:
                     pass
                 else:
                     undated = os.path.join(dst, options.noExifPath)
-                    clone(fullfilepath, os.path.join(undated, filename), options.move)
+                    copyOrMove(fullfilepath, os.path.join(undated, filename), not options.move)
             else:
                 # photo has a date
                 logger.debug("joining %s %d %d %d %s" %(dst, pYear, pMonth, pDay, pTime))
                 newfiledir = os.path.join(dst, str(pYear), str(pMonth), str(pDay))
                 newfilepath = os.path.join(newfiledir, pTime)
-                clone(fullfilepath, newfilepath, options.move)
+                copyOrMove(fullfilepath, newfilepath, not options.move)
                         
