@@ -153,7 +153,7 @@ def getNewFileName(filepath):
     basename, ext = os.path.splitext(filepath)
     while(True):
         fileinc = fileinc + 1
-        newname = os.path.join(basename+'_'+str(fileinc), ext)
+        newname = os.path.join(basename+'_'+str(fileinc)+ext)
         if os.path.exists(newname):
             continue
         else:
@@ -185,10 +185,10 @@ def renameImage(filepath, imageDateTime):
     ''' returns the new name of an image according to its date, also return the full path
     '''
     _, ext = os.path.splitext(filepath) # keep the extension
-    newFileName = datetime.strftime(imageDateTime, '%H-%M-%S')+ext
-    newFileName = os.path.join(filepath, imageDateTime.year, imageDateTime.month, imageDateTime.day, newFileName)
+    newFileName = datetime.strftime(imageDateTime, '%Y-%m-%d_%H-%M-%S')+ext
+    newFileName = os.path.join(str(imageDateTime.year), str(imageDateTime.month), str(imageDateTime.day), str(newFileName))
     return newFileName
-    
+
 if __name__=='__main__':
     ''' main
     '''
@@ -239,8 +239,9 @@ if __name__=='__main__':
                     copyOrMove(fullfilepath, os.path.join(undated, filename), not options.move)
             else:
                 # photo has a date
-                logger.debug("joining %s %d %d %d %s" %(dst, pYear, pMonth, pDay, pTime))
-                newfiledir = os.path.join(dst, str(pYear), str(pMonth), str(pDay))
-                newfilepath = os.path.join(newfiledir, pTime)
+                logger.debug("%s has a date of %s" %(fullfilepath, imageDateTime.strftime('%Y-%m-%d %H:%M:%S')))
+                newfilename = renameImage(filename, imageDateTime)
+                newfilepath = os.path.join(dst, newfilename)
                 copyOrMove(fullfilepath, newfilepath, not options.move)
-                        
+    if options.move:
+        shutil.rmtree(src, 1) # ignore errors
