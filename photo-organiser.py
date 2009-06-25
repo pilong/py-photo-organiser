@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#Meitham 25 May 2009
+#Meitham 13 June 2009
 __doc__ = """Organise your photos.
 
 NAME
@@ -43,8 +43,66 @@ import hashlib
 import logging, logging.handlers
 
 __version__ = "0.100"
-class ImageDate:
+
+class ImageException(Exception):
     pass
+
+class InvalidImageFile(ImageException):
+    pass
+
+class InvalidDateTag(ImageException):
+    pass
+
+class MissingImageFile(ImageException):
+    pass
+    
+class ImageDate:
+    ''' a date and time class
+    '''
+    def __init__(self, datetime=None):
+        ''' creates an instance using the given file datetime
+        '''
+        self.datatime = datetime
+		
+	def getPath(self, base, filename):
+		''' returns a string that describes a path'''
+		fileExt = os.path.splitext(filename)
+		fileName = self.datatime.strftime('%H:%M:%S') + fileExt
+		relativePath = os.path.join(base, 
+		absPath = os.path.
+		
+	def __init__(self):
+		return self.datatime.strftime('%Y-%m-%d %H:%M:%S')
+        
+class ImageFile:
+    ''' a file that contains valid image format
+    '''
+    def __init__(self, fullfilepath):
+        ''' creates an instance of the ImageFile
+        '''
+        if not os.path.exists(fullfilepath): # file missing
+            raise MissingImageFile('file not found %s' %fullfilepath)
+        try:
+            im = Image.open(filepath)
+            if hasattr(im, '_getexif'):
+                exifdata = im._getexif()
+                logging.debug("type of object is %s" %type(exifdata))
+                if type(exifdata) == type(None):
+                    return None
+                ctime = exifdata[0x9003]
+                try:
+                    image_dt_tm = datetime.strptime(ctime, '%Y:%m:%d %H:%M:%S')
+                except ValueError, e:
+                    logging.debug(e)
+                    image_dt_tm = None
+                return image_dt_tm
+            else:
+                logging.debug("%s has no datetime attribute" %filepath)
+                return None
+        except IOError, e:
+            logging.debug(e) # missing file or invalid format
+            return None
+        
 def getOptions():
     ''' creates the options and return a parser object
     '''
@@ -243,5 +301,5 @@ if __name__=='__main__':
                 newfilename = renameImage(filename, imageDateTime)
                 newfilepath = os.path.join(dst, newfilename)
                 copyOrMove(fullfilepath, newfilepath, not options.move)
-    if options.move:
-        shutil.rmtree(src, 1) # ignore errors
+    # if options.move:
+        # shutil.rmtree(src, 1) # ignore errors
