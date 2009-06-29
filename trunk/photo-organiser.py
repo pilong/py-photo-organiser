@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#Meitham 13 June 2009
+#Meitham 27 June 2009
 __doc__ = """Organise your photos.
 
 NAME
@@ -42,7 +42,7 @@ import string
 import hashlib
 import logging, logging.handlers
 
-__version__ = "0.100"
+__version__ = "0.101"
 
 class ImageException(Exception):
     pass
@@ -53,27 +53,67 @@ class InvalidImageFile(ImageException):
 class InvalidDateTag(ImageException):
     pass
 
+class MissingDateTag(ImageException):
+    pass
+
 class MissingImageFile(ImageException):
     pass
     
+def isPhoto(path):
+    knownPhotoExt = [".jpg",".jpeg",".png"]
+    _, ext = os.path.splitext(path)
+    if string.lower(ext) in knownPhotoExt:
+        return True
+    else:
+        return False
+
+def isExact(file1, file2):
+    ''' checks if two files have exactly same content
+    '''
+    hash1 = hashlib.sha256()
+    hash2 = hashlib.sha256()
+    hash1.update(open(file1).read())
+    hash2.update(open(file2).read())
+    if hash1.hexdigest() == hash2.hexdigest():
+        # files are exact
+        logging.info("%s and %s are exact duplicate" %(file1, file2))
+        return True
+    else:
+        return False
+
+
 class ImageDate:
     ''' a date and time class
     '''
-    def __init__(self, datetime=None):
-        ''' creates an instance using the given file datetime
+    def __init__(self, img_dt_tm=None):
+        ''' creates an instance using the given file img_dt_tm
         '''
-        self.datatime = datetime
-		
-	def getPath(self, base, filename):
-		''' returns a string that describes a path'''
-		fileExt = os.path.splitext(filename)
-		fileName = self.datatime.strftime('%H:%M:%S') + fileExt
-		relativePath = os.path.join(base, 
-		absPath = os.path.
-		
-	def __init__(self):
-		return self.datatime.strftime('%Y-%m-%d %H:%M:%S')
-        
+        if type(img_dt_tm) == type(None):
+            raise InvalidDateTag('missing date/time stamp')
+        try:
+            if type(img_dt_tm) == type(''): # string
+                self.img_dt_tm = datetime.strptime(img_dt_tm, '%Y:%m:%d %H:%M:%S')
+                # self.img_dt_tm.microsecond = 0
+        except ValueError, e:
+            raise InvalidDateTag('missing date/time stamp')
+
+    def getPath(self, base, filename):
+        ''' returns a string that describes a path as a date such as
+        year/month/day/hour_minute_second_microsecond.
+        '''
+        _, fileExt = os.path.splitext(filename.lower())
+        fileName = self.img_dt_tm.strftime('%Y_%m_%d-%H_%M_%S_%f') + fileExt
+        return os.path.join(base, \
+                            str(self.img_dt_tm.year),
+                            str(self.img_dt_tm.month),
+                            str(self.img_dt_tm.day), fileName)
+
+    def __str__(self):
+        return str(self.img_dt_tm)
+
+    def incMicrosecond(self):
+        self.img_dt_tm.microsecond += timedelta(microsecond=1)
+
 class ImageFile:
     ''' a file that contains valid image format
     '''
@@ -83,26 +123,67 @@ class ImageFile:
         if not os.path.exists(fullfilepath): # file missing
             raise MissingImageFile('file not found %s' %fullfilepath)
         try:
-            im = Image.open(filepath)
-            if hasattr(im, '_getexif'):
-                exifdata = im._getexif()
-                logging.debug("type of object is %s" %type(exifdata))
-                if type(exifdata) == type(None):
-                    return None
-                ctime = exifdata[0x9003]
-                try:
-                    image_dt_tm = datetime.strptime(ctime, '%Y:%m:%d %H:%M:%S')
-                except ValueError, e:
-                    logging.debug(e)
-                    image_dt_tm = None
-                return image_dt_tm
-            else:
-                logging.debug("%s has no datetime attribute" %filepath)
-                return None
+            im = Image.open(fullfilepath)
+            self.srcfilepath = fullfilepath
         except IOError, e:
-            logging.debug(e) # missing file or invalid format
+            raise InvalidImageFile('invalid image file %s' %fullfilepath)
+        if not hasattr(im, '_getexif'):
+            raise MissingDateTag('image file has no date %s' %fullfilepath)
+        else:
+            try:
+                exifdata = im._getexif()
+            except KeyError, e:
+                self.imagedate = None
+                logging.debug(e)
+                raise MissingDateTag('image file has no date %s' %fullfilepath)
+            logging.debug("type of object is %s" %type(exifdata))
+            if type(exifdata) == type(None):
+                raise InvalidDateTag('exif date of type None')
+            try:
+                ctime = exifdata[0x9003]
+                self.imagedate = ImageDate(ctime)
+            except InvalidDateTag, e:
+                self.imagedate = None
+                logging.debug(e)
+            except KeyError, e:
+                self.imagedate = None
+                logging.debug(e)
+    
+    def getFileName(self, base):
+        ''' gets a proper name and path with no duplications
+        '''
+        if self.imagedate is None:
+            # i should handle images with no date here
+            logger.info("no image date for file %s " %self.srcfilepath)
             return None
-        
+        while True:
+            self.dstfilename = self.imagedate.getPath(base, self.srcfilepath)
+            if os.path.exists(self.dstfilename):
+                logger.info("image already exists %s " %self.dstfilename)
+                if isExact(self.srcfilepath, self.dstfilename):
+                    logger.info("and its duplicate %s " %self.dstfilename)
+                    return None # duplicate
+                else:
+                    logger.info("but not duplicate %s " %self.dstfilename)
+                    self.imagedate.incMicrosecond()
+            else:
+                return self.dstfilename
+    
+    def move(self, base, deleteOriginal=None):
+        if self.getFileName(base) is None:
+            logger.info("unknown destination for %s " %self.srcfilepath)
+            return
+        dstdir = os.path.dirname(self.dstfilename)
+        if not (os.path.exists(dstdir) and os.path.isdir(dstdir)):
+            logger.info("creating dir %s" %dstdir)
+            os.makedirs(dstdir)
+        if deleteOriginal:
+            logger.info("moving %s ==> %s " %(self.srcfilepath, self.dstfilename))
+            shutil.move(self.srcfilepath, self.dstfilename)
+        else:
+            logger.info("copying %s ==> %s " %(self.srcfilepath, self.dstfilename))
+            shutil.copy(self.srcfilepath, self.dstfilename)
+
 def getOptions():
     ''' creates the options and return a parser object
     '''
@@ -137,29 +218,15 @@ def getOptions():
                       help="copy/moves images with no EXIF data to [default: %default]")
     return parser
 
-def getImageDateTime(filepath):
-    ''' returns the datetime of the image or None
-    '''
-    try:
-        im = Image.open(filepath)
-        if hasattr(im, '_getexif'):
-            exifdata = im._getexif()
-            logging.debug("type of object is %s" %type(exifdata))
-            if type(exifdata) == type(None):
-                return None
-            ctime = exifdata[0x9003]
-            try:
-                image_dt_tm = datetime.strptime(ctime, '%Y:%m:%d %H:%M:%S')
-            except ValueError, e:
-                logging.debug(e)
-                image_dt_tm = None
-            return image_dt_tm
-        else:
-            logging.debug("%s has no datetime attribute" %filepath)
-            return None
-    except Exception, e:
-        logging.debug(e)
-        return None
+class FilesTree:
+    def __init__(self):
+        pass
+    
+    def __next__(self):
+        pass
+    
+    def __iter__(self):
+        pass
     
 def treewalk(top, followlinks=False, depth=0):
     ''' generator similar to os.walk(), but with limited subdirectory depth
@@ -179,73 +246,6 @@ def treewalk(top, followlinks=False, depth=0):
             # Unknown file type, print a message
             logging.info('Skipping %s' % pathname)
 
-def isPhoto(path):
-    knownPhotoExt = [".jpg",".jpeg",".png"]
-    _, ext = os.path.splitext(path)
-    if string.lower(ext) in knownPhotoExt:
-        return True
-    else:
-        return False
-
-def isExact(file1, file2):
-    ''' checks if two files have exactly same content
-    '''
-    fold = open(file1) # fold stands for file old - file handler
-    fnew = open(file2) # fnew stands for file new - file handler
-    hash1 = hashlib.sha256()
-    hash2 = hashlib.sha256()
-    hash1.update(open(file1).read())
-    hash2.update(open(file2).read())
-    if hash1.hexdigest() == hash2.hexdigest():
-        # files are exact
-        logging.info("%s and %s are exact duplicate" %(fullfilepath, newfilepath))
-        return True
-    else:
-        return False
-        
-def getNewFileName(filepath):
-    ''' if file name is not in use return it, otherwise
-    returns file name appeneded with _XX where XX is unique in that directory
-    '''
-    fileinc = 0
-    basename, ext = os.path.splitext(filepath)
-    while(True):
-        fileinc = fileinc + 1
-        newname = os.path.join(basename+'_'+str(fileinc)+ext)
-        if os.path.exists(newname):
-            continue
-        else:
-            return newname
-
-def copyOrMove(src, dst, copy=1):
-    ''' copy or move file
-    '''
-    if os.path.exists(dst):
-        # check for duplication
-        if isExact(src, dst):
-            # files are exact
-            logger.info("%s and %s are exact duplicate" %(src, dst))
-        else:
-            # different files with same name, invent a new name
-            dst = getNewFileName(dst)
-    else:
-        # path doesn't even exists, no check for duplication
-        dstdir = os.path.dirname(dst)
-        if not (os.path.exists(dstdir) and os.path.isdir(dstdir)):
-            logger.info("creating dir %s" %dstdir)
-            os.makedirs(dstdir)
-    if copy:
-        shutil.copy(src, dst)
-    else:
-        shutil.move(src, dst)
-
-def renameImage(filepath, imageDateTime):
-    ''' returns the new name of an image according to its date, also return the full path
-    '''
-    _, ext = os.path.splitext(filepath) # keep the extension
-    newFileName = datetime.strftime(imageDateTime, '%Y-%m-%d_%H-%M-%S')+ext
-    newFileName = os.path.join(str(imageDateTime.year), str(imageDateTime.month), str(imageDateTime.day), str(newFileName))
-    return newFileName
 
 if __name__=='__main__':
     ''' main
@@ -261,7 +261,8 @@ if __name__=='__main__':
         fileHandler = logging.FileHandler(options.log)
         logger.addHandler(fileHandler)
     if len(args) == 1:
-        src = dst = args[0]
+        src = dst = args[0] 
+        # this needs to build the tree under temp and move it to dest when done
     elif len(args) == 2:
         src = args[0]
         dst = args[1]
@@ -284,22 +285,13 @@ if __name__=='__main__':
         maxdepth = None
     for dirpath, filename in treewalk(top=src, followlinks=options.symlink):
         fullfilepath = os.path.join(dirpath, filename)
-        if isPhoto(fullfilepath):
-            logger.debug("processing %s" %fullfilepath)
-            imageDateTime = getImageDateTime(fullfilepath)
-            if imageDateTime is None:
-                logger.warning("%s photo has no known date" %fullfilepath)
-                # what to do with photos with missing exif
-                if options.ignore:
-                    pass
-                else:
-                    undated = os.path.join(dst, options.noExifPath)
-                    copyOrMove(fullfilepath, os.path.join(undated, filename), not options.move)
-            else:
-                # photo has a date
-                logger.debug("%s has a date of %s" %(fullfilepath, imageDateTime.strftime('%Y-%m-%d %H:%M:%S')))
-                newfilename = renameImage(filename, imageDateTime)
-                newfilepath = os.path.join(dst, newfilename)
-                copyOrMove(fullfilepath, newfilepath, not options.move)
-    # if options.move:
-        # shutil.rmtree(src, 1) # ignore errors
+        logger.debug("processing %s" %fullfilepath)
+        if not isPhoto(fullfilepath): # ignore non image extensions
+            logger.debug("ignoring non image file %s" %fullfilepath)
+            continue
+        try:
+            imagefile = ImageFile(fullfilepath)
+        except ImageException, e:
+            logger.debug(e)
+            continue
+        imagefile.move(dst, options.move)
